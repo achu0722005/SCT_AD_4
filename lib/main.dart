@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter/rendering.dart';
 
 void main() {
   runApp(const Myapp());
@@ -37,6 +38,19 @@ class _QrcodehomescreenState extends State<Qrcodehomescreen> {
   String? qrData;
   final GlobalKey qrKey = GlobalKey();
 
+  final MobileScannerController _scannerController = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates,
+    returnImage: false,
+  );
+
+  bool _isScanning = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scannerController.start();
+  }
+
   void _generateQR() {
     setState(() {
       qrData = _textController.text.trim();
@@ -52,7 +66,6 @@ class _QrcodehomescreenState extends State<Qrcodehomescreen> {
       await image.toByteData(format: ui.ImageByteFormat.png);
       return byteData?.buffer.asUint8List();
     } catch (e) {
-      print("Error capturing QR: $e");
       return null;
     }
   }
@@ -61,14 +74,14 @@ class _QrcodehomescreenState extends State<Qrcodehomescreen> {
     Uint8List? pngBytes = await _captureQrAsBytes();
     if (pngBytes == null) return;
 
-    final result = await ImageGallerySaver.saveImage(
+    await ImageGallerySaver.saveImage(
       pngBytes,
       quality: 100,
       name: "qr_${DateTime.now().millisecondsSinceEpoch}",
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('✅ QR Code saved to gallery!')),
+      const SnackBar(content: Text('QR Code saved to gallery!')),
     );
   }
 
@@ -81,6 +94,49 @@ class _QrcodehomescreenState extends State<Qrcodehomescreen> {
     await file.writeAsBytes(pngBytes);
 
     await Share.shareXFiles([XFile(file.path)], text: 'Here is my QR Code!');
+  }
+
+  void _showResultDialog(String resultValue) {
+    _scannerController.stop();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("QR Code Scanned"),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                const Text('Value:'),
+                const SizedBox(height: 8),
+                Text(
+                  resultValue,
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _scannerController.start();
+                setState(() { _isScanning = true; });
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    _textController.dispose();
+    super.dispose();
   }
 
   @override
@@ -114,12 +170,19 @@ class _QrcodehomescreenState extends State<Qrcodehomescreen> {
                 height: 250,
                 color: Colors.pink,
                 child: MobileScanner(
-                  controller: MobileScannerController(
-                      detectionSpeed: DetectionSpeed.noDuplicates),
+                  controller: _scannerController,
                   onDetect: (capture) {
+                    if (!_isScanning) return;
+
                     final List<Barcode> barcodes = capture.barcodes;
-                    for (final barcode in barcodes) {
-                      print("barcode found : ${barcode.rawValue}");
+
+                    if (barcodes.isNotEmpty) {
+                      final String? rawValue = barcodes.first.rawValue;
+
+                      if (rawValue != null && mounted) {
+                        setState(() { _isScanning = false; });
+                        _showResultDialog(rawValue);
+                      }
                     }
                   },
                 ),
@@ -266,7 +329,7 @@ class _QrcodehomescreenState extends State<Qrcodehomescreen> {
 
   Widget _buildButton(IconData icon, String label, Color color) {
     return InkWell(
-      onTap: () => print(label),
+      onTap: () {},
       splashColor: Colors.blue,
       child: Container(
         width: 90,
